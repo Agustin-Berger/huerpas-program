@@ -476,4 +476,29 @@ button:active {
 .client-information small {
   line-height: 1.4;
 }
+.product-list {
+  margin-top: 18px;
+}
+
+.product-card {
+  margin-bottom: 10px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #dde5df;
+  border-radius: 14px;
+  background: white;
+}
+
+.product-information {
+  flex: 1;
+}
+
+.product-information strong {
+  display: block;
+  color: #263229;
+  font-size: 15px;
+  line-height: 1.4;
+}
 }
