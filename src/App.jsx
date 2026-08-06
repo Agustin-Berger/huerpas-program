@@ -3,9 +3,11 @@ import Home from './pages/Home'
 import Clientes from './pages/Clientes'
 import Productos from './pages/Productos'
 import './App.css'
+import NuevoPedido from './pages/NuevoPedido'
 
 const CLIENTES_STORAGE_KEY = 'huerpas-clientes'
 const PRODUCTOS_STORAGE_KEY = 'huerpas-productos'
+const PEDIDOS_STORAGE_KEY = 'huerpas-pedidos'
 
 function App() {
   const [currentPage, setCurrentPage] = useState('inicio')
@@ -31,6 +33,16 @@ function App() {
       return []
     }
   })
+  const [pedidos, setPedidos] = useState(() => {
+  try {
+    const pedidosGuardados = localStorage.getItem(PEDIDOS_STORAGE_KEY)
+
+    return pedidosGuardados ? JSON.parse(pedidosGuardados) : []
+  } catch (error) {
+    console.error('No se pudieron recuperar los pedidos:', error)
+    return []
+  }
+})
 
   useEffect(() => {
     try {
@@ -47,6 +59,13 @@ function App() {
       console.error('No se pudieron guardar los productos:', error)
     }
   }, [productos])
+  useEffect(() => {
+  try {
+    localStorage.setItem(PEDIDOS_STORAGE_KEY, JSON.stringify(pedidos))
+  } catch (error) {
+    console.error('No se pudieron guardar los pedidos:', error)
+  }
+}, [pedidos])
 
   function addClient(newClient) {
     setClientes((currentClients) => [...currentClients, newClient])
@@ -93,6 +112,19 @@ function App() {
   }
 
   function renderPage() {
+if (currentPage === 'nuevo-pedido') {
+  return (
+    <NuevoPedido
+      clientes={clientes}
+      productos={productos}
+      onSaveOrder={saveOrder}
+      onGoHome={() => setCurrentPage('inicio')}
+    />
+  )
+}
+function saveOrder(newOrder) {
+  setPedidos((currentOrders) => [...currentOrders, newOrder])
+}
     if (currentPage === 'inicio') {
       return <Home onNavigate={setCurrentPage} />
     }
