@@ -1,55 +1,64 @@
 import { useEffect, useState } from 'react'
+
 import Home from './pages/Home'
 import Clientes from './pages/Clientes'
 import Productos from './pages/Productos'
 import NuevoPedido from './pages/NuevoPedido'
 import Pedidos from './pages/Pedidos'
+
+import {
+  STORES,
+  deleteItem,
+  getAllItems,
+  migrateLocalStorageToIndexedDB,
+  saveItem,
+} from './database/db'
+
 import './App.css'
 
-const CLIENTES_STORAGE_KEY = 'huerpas-clientes'
-const PRODUCTOS_STORAGE_KEY = 'huerpas-productos'
-const PEDIDOS_STORAGE_KEY = 'huerpas-pedidos'
-
 function App() {
-  const [currentPage, setCurrentPage] = useState('inicio')
-  const [pedidoEditando, setPedidoEditando] = useState(null)
+  const [currentPage, setCurrentPage] =
+    useState('inicio')
 
-  const [clientes, setClientes] = useState(() =>
-    getStoredData(CLIENTES_STORAGE_KEY),
-  )
+  const [pedidoEditando, setPedidoEditando] =
+    useState(null)
 
-  const [productos, setProductos] = useState(() =>
-    getStoredData(PRODUCTOS_STORAGE_KEY),
-  )
+  const [clientes, setClientes] = useState([])
+  const [productos, setProductos] = useState([])
+  const [pedidos, setPedidos] = useState([])
 
-  const [pedidos, setPedidos] = useState(() =>
-    getStoredData(PEDIDOS_STORAGE_KEY),
-  )
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    saveStoredData(CLIENTES_STORAGE_KEY, clientes)
-  }, [clientes])
+    async function loadDatabase() {
+      try {
+        await migrateLocalStorageToIndexedDB()
 
-  useEffect(() => {
-    saveStoredData(PRODUCTOS_STORAGE_KEY, productos)
-  }, [productos])
+        const [
+          clientesGuardados,
+          productosGuardados,
+          pedidosGuardados,
+        ] = await Promise.all([
+          getAllItems(STORES.CLIENTES),
+          getAllItems(STORES.PRODUCTOS),
+          getAllItems(STORES.PEDIDOS),
+        ])
 
-  useEffect(() => {
-    saveStoredData(PEDIDOS_STORAGE_KEY, pedidos)
-  }, [pedidos])
-  function readOrder(orderId) {
-  setPedidos((currentOrders) =>
-    currentOrders.map((order) =>
-      order.id === orderId
-        ? {
-            ...order,
-            estado: 'leido',
-            editado: false,
-          }
-        : order,
-    ),
-  )
-}
+        setClientes(clientesGuardados)
+        setProductos(productosGuardados)
+        setPedidos(pedidosGuardados)
+      } catch (error) {
+        console.error(
+          'Error cargando la base de datos:',
+          error,
+        )
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadDatabase()
+  }, [])
 
   function navigate(page) {
     if (page === 'nuevo-pedido') {
@@ -60,68 +69,153 @@ function App() {
   }
 
   function addClient(newClient) {
-    setClientes((currentClients) => [...currentClients, newClient])
+    setClientes((currentClients) => [
+      ...currentClients,
+      newClient,
+    ])
+
+    saveItem(
+      STORES.CLIENTES,
+      newClient,
+    ).catch(console.error)
   }
 
   function updateClient(updatedClient) {
     setClientes((currentClients) =>
       currentClients.map((cliente) =>
-        cliente.id === updatedClient.id ? updatedClient : cliente,
+        cliente.id === updatedClient.id
+          ? updatedClient
+          : cliente,
       ),
     )
+
+    saveItem(
+      STORES.CLIENTES,
+      updatedClient,
+    ).catch(console.error)
   }
 
   function deleteClient(clientId) {
-    const confirmed = window.confirm('¿Querés eliminar este cliente?')
+    const confirmed = window.confirm(
+      '¿Querés eliminar este cliente?',
+    )
 
     if (!confirmed) return
 
     setClientes((currentClients) =>
-      currentClients.filter((cliente) => cliente.id !== clientId),
+      currentClients.filter(
+        (cliente) => cliente.id !== clientId,
+      ),
     )
+
+    deleteItem(
+      STORES.CLIENTES,
+      clientId,
+    ).catch(console.error)
   }
 
   function addProduct(newProduct) {
-    setProductos((currentProducts) => [...currentProducts, newProduct])
+    setProductos((currentProducts) => [
+      ...currentProducts,
+      newProduct,
+    ])
+
+    saveItem(
+      STORES.PRODUCTOS,
+      newProduct,
+    ).catch(console.error)
   }
 
   function updateProduct(updatedProduct) {
     setProductos((currentProducts) =>
       currentProducts.map((producto) =>
-        producto.id === updatedProduct.id ? updatedProduct : producto,
+        producto.id === updatedProduct.id
+          ? updatedProduct
+          : producto,
       ),
     )
+
+    saveItem(
+      STORES.PRODUCTOS,
+      updatedProduct,
+    ).catch(console.error)
   }
 
   function deleteProduct(productId) {
-    const confirmed = window.confirm('¿Querés eliminar este producto?')
+    const confirmed = window.confirm(
+      '¿Querés eliminar este producto?',
+    )
 
     if (!confirmed) return
 
     setProductos((currentProducts) =>
-      currentProducts.filter((producto) => producto.id !== productId),
+      currentProducts.filter(
+        (producto) => producto.id !== productId,
+      ),
     )
+
+    deleteItem(
+      STORES.PRODUCTOS,
+      productId,
+    ).catch(console.error)
   }
 
   function saveOrder(order) {
-    const orderAlreadyExists = pedidos.some(
-      (currentOrder) => currentOrder.id === order.id,
-    )
-
-    if (orderAlreadyExists) {
-      setPedidos((currentOrders) =>
-        currentOrders.map((currentOrder) =>
-          currentOrder.id === order.id ? order : currentOrder,
-        ),
+    setPedidos((currentOrders) => {
+      const exists = currentOrders.some(
+        (currentOrder) =>
+          currentOrder.id === order.id,
       )
-    } else {
-      setPedidos((currentOrders) => [...currentOrders, order])
-    }
+
+      if (exists) {
+        return currentOrders.map(
+          (currentOrder) =>
+            currentOrder.id === order.id
+              ? order
+              : currentOrder,
+        )
+      }
+
+      return [...currentOrders, order]
+    })
+
+    saveItem(
+      STORES.PEDIDOS,
+      order,
+    ).catch(console.error)
   }
 
   function editOrder(order) {
     setPedidoEditando(order)
     setCurrentPage('nuevo-pedido')
+  }
+
+  function readOrder(orderId) {
+    const order = pedidos.find(
+      (currentOrder) =>
+        currentOrder.id === orderId,
+    )
+
+    if (!order) return
+
+    const updatedOrder = {
+      ...order,
+      estado: 'leido',
+      editado: false,
+    }
+
+    setPedidos((currentOrders) =>
+      currentOrders.map((currentOrder) =>
+        currentOrder.id === orderId
+          ? updatedOrder
+          : currentOrder,
+      ),
+    )
+
+    saveItem(
+      STORES.PEDIDOS,
+      updatedOrder,
+    ).catch(console.error)
   }
 
   function deleteOrder(orderId) {
@@ -132,8 +226,15 @@ function App() {
     if (!confirmed) return
 
     setPedidos((currentOrders) =>
-      currentOrders.filter((order) => order.id !== orderId),
+      currentOrders.filter(
+        (order) => order.id !== orderId,
+      ),
     )
+
+    deleteItem(
+      STORES.PEDIDOS,
+      orderId,
+    ).catch(console.error)
   }
 
   function finishOrder() {
@@ -145,17 +246,6 @@ function App() {
     if (currentPage === 'inicio') {
       return <Home onNavigate={navigate} />
     }
-    if (currentPage === 'pedidos') {
-  return (
-    <Pedidos
-      pedidos={pedidos}
-      onEditOrder={editOrder}
-      onDeleteOrder={deleteOrder}
-      onReadOrder={readOrder}
-      onGoHome={() => setCurrentPage('inicio')}
-    />
-  )
-}
 
     if (currentPage === 'clientes') {
       return (
@@ -164,7 +254,9 @@ function App() {
           onAddClient={addClient}
           onUpdateClient={updateClient}
           onDeleteClient={deleteClient}
-          onGoHome={() => setCurrentPage('inicio')}
+          onGoHome={() =>
+            setCurrentPage('inicio')
+          }
         />
       )
     }
@@ -176,7 +268,9 @@ function App() {
           onAddProduct={addProduct}
           onUpdateProduct={updateProduct}
           onDeleteProduct={deleteProduct}
-          onGoHome={() => setCurrentPage('inicio')}
+          onGoHome={() =>
+            setCurrentPage('inicio')
+          }
         />
       )
     }
@@ -203,7 +297,10 @@ function App() {
           pedidos={pedidos}
           onEditOrder={editOrder}
           onDeleteOrder={deleteOrder}
-          onGoHome={() => setCurrentPage('inicio')}
+          onReadOrder={readOrder}
+          onGoHome={() =>
+            setCurrentPage('inicio')
+          }
         />
       )
     }
@@ -213,44 +310,33 @@ function App() {
         <button
           className="back-button"
           type="button"
-          onClick={() => setCurrentPage('inicio')}
+          onClick={() =>
+            setCurrentPage('inicio')
+          }
         >
           ← Inicio
         </button>
 
-        <h1>{getPageTitle(currentPage)}</h1>
-        <p>Esta pantalla todavía está en construcción.</p>
+        <h1>Huerpas Program</h1>
       </main>
     )
   }
 
-  return <div className="app-shell">{renderPage()}</div>
-}
-
-function getStoredData(key) {
-  try {
-    const storedData = localStorage.getItem(key)
-    return storedData ? JSON.parse(storedData) : []
-  } catch (error) {
-    console.error(`No se pudieron recuperar los datos de ${key}:`, error)
-    return []
-  }
-}
-
-function saveStoredData(key, data) {
-  try {
-    localStorage.setItem(key, JSON.stringify(data))
-  } catch (error) {
-    console.error(`No se pudieron guardar los datos de ${key}:`, error)
-  }
-}
-
-function getPageTitle(page) {
-  const titles = {
-    mas: 'Más',
+  if (loading) {
+    return (
+      <div className="app-shell">
+        <main className="page">
+          <p>Cargando Huerpas Program...</p>
+        </main>
+      </div>
+    )
   }
 
-  return titles[page] || 'Huerpas Program'
+  return (
+    <div className="app-shell">
+      {renderPage()}
+    </div>
+  )
 }
 
 export default App
