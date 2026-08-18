@@ -10,7 +10,7 @@ import {
   STORES,
   deleteItem,
   getAllItems,
-  migrateLocalStorageToIndexedDB,
+ 
   saveItem,
 } from './database/db'
 
@@ -32,8 +32,7 @@ function App() {
   useEffect(() => {
     async function loadDatabase() {
       try {
-        await migrateLocalStorageToIndexedDB()
-
+        
         const [
           clientesGuardados,
           productosGuardados,
