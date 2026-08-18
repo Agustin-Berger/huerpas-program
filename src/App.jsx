@@ -5,7 +5,7 @@ import Clientes from './pages/Clientes'
 import Productos from './pages/Productos'
 import NuevoPedido from './pages/NuevoPedido'
 import Pedidos from './pages/Pedidos'
-
+import Mas from './pages/Mas'
 import {
   STORES,
   deleteItem,
@@ -240,11 +240,28 @@ function App() {
     setPedidoEditando(null)
     setCurrentPage('pedidos')
   }
+  function applyImportedBackup(importedData) {
+  setClientes(importedData.clientes)
+  setProductos(importedData.productos)
+  setPedidos(importedData.pedidos)
+}
 
-  function renderPage() {
-    if (currentPage === 'inicio') {
-      return <Home onNavigate={navigate} />
-    }
+function renderPage() {
+  if (currentPage === 'inicio') {
+    return <Home onNavigate={navigate} />
+  }
+
+  if (currentPage === 'mas') {
+    return (
+      <Mas
+        onGoHome={() => setCurrentPage('inicio')}
+        onBackupImported={applyImportedBackup}
+      />
+    )
+  }
+
+  // acá continúan clientes, productos, pedidos, etc.
+    
 
     if (currentPage === 'clientes') {
       return (
