@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import Home from './pages/Home'
 import Clientes from './pages/Clientes'
 import Productos from './pages/Productos'
-import './App.css'
 import NuevoPedido from './pages/NuevoPedido'
+import Pedidos from './pages/Pedidos'
+import './App.css'
 
 const CLIENTES_STORAGE_KEY = 'huerpas-clientes'
 const PRODUCTOS_STORAGE_KEY = 'huerpas-productos'
@@ -11,61 +12,52 @@ const PEDIDOS_STORAGE_KEY = 'huerpas-pedidos'
 
 function App() {
   const [currentPage, setCurrentPage] = useState('inicio')
+  const [pedidoEditando, setPedidoEditando] = useState(null)
 
-  const [clientes, setClientes] = useState(() => {
-    try {
-      const clientesGuardados = localStorage.getItem(CLIENTES_STORAGE_KEY)
+  const [clientes, setClientes] = useState(() =>
+    getStoredData(CLIENTES_STORAGE_KEY),
+  )
 
-      return clientesGuardados ? JSON.parse(clientesGuardados) : []
-    } catch (error) {
-      console.error('No se pudieron recuperar los clientes:', error)
-      return []
-    }
-  })
+  const [productos, setProductos] = useState(() =>
+    getStoredData(PRODUCTOS_STORAGE_KEY),
+  )
 
-  const [productos, setProductos] = useState(() => {
-    try {
-      const productosGuardados = localStorage.getItem(PRODUCTOS_STORAGE_KEY)
-
-      return productosGuardados ? JSON.parse(productosGuardados) : []
-    } catch (error) {
-      console.error('No se pudieron recuperar los productos:', error)
-      return []
-    }
-  })
-  const [pedidos, setPedidos] = useState(() => {
-  try {
-    const pedidosGuardados = localStorage.getItem(PEDIDOS_STORAGE_KEY)
-
-    return pedidosGuardados ? JSON.parse(pedidosGuardados) : []
-  } catch (error) {
-    console.error('No se pudieron recuperar los pedidos:', error)
-    return []
-  }
-})
+  const [pedidos, setPedidos] = useState(() =>
+    getStoredData(PEDIDOS_STORAGE_KEY),
+  )
 
   useEffect(() => {
-    try {
-      localStorage.setItem(CLIENTES_STORAGE_KEY, JSON.stringify(clientes))
-    } catch (error) {
-      console.error('No se pudieron guardar los clientes:', error)
-    }
+    saveStoredData(CLIENTES_STORAGE_KEY, clientes)
   }, [clientes])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(PRODUCTOS_STORAGE_KEY, JSON.stringify(productos))
-    } catch (error) {
-      console.error('No se pudieron guardar los productos:', error)
-    }
+    saveStoredData(PRODUCTOS_STORAGE_KEY, productos)
   }, [productos])
+
   useEffect(() => {
-  try {
-    localStorage.setItem(PEDIDOS_STORAGE_KEY, JSON.stringify(pedidos))
-  } catch (error) {
-    console.error('No se pudieron guardar los pedidos:', error)
+    saveStoredData(PEDIDOS_STORAGE_KEY, pedidos)
+  }, [pedidos])
+  function readOrder(orderId) {
+  setPedidos((currentOrders) =>
+    currentOrders.map((order) =>
+      order.id === orderId
+        ? {
+            ...order,
+            estado: 'leido',
+            editado: false,
+          }
+        : order,
+    ),
+  )
+}
+
+  function navigate(page) {
+    if (page === 'nuevo-pedido') {
+      setPedidoEditando(null)
+    }
+
+    setCurrentPage(page)
   }
-}, [pedidos])
 
   function addClient(newClient) {
     setClientes((currentClients) => [...currentClients, newClient])
@@ -111,23 +103,59 @@ function App() {
     )
   }
 
+  function saveOrder(order) {
+    const orderAlreadyExists = pedidos.some(
+      (currentOrder) => currentOrder.id === order.id,
+    )
+
+    if (orderAlreadyExists) {
+      setPedidos((currentOrders) =>
+        currentOrders.map((currentOrder) =>
+          currentOrder.id === order.id ? order : currentOrder,
+        ),
+      )
+    } else {
+      setPedidos((currentOrders) => [...currentOrders, order])
+    }
+  }
+
+  function editOrder(order) {
+    setPedidoEditando(order)
+    setCurrentPage('nuevo-pedido')
+  }
+
+  function deleteOrder(orderId) {
+    const confirmed = window.confirm(
+      '¿Querés eliminar este pedido definitivamente?',
+    )
+
+    if (!confirmed) return
+
+    setPedidos((currentOrders) =>
+      currentOrders.filter((order) => order.id !== orderId),
+    )
+  }
+
+  function finishOrder() {
+    setPedidoEditando(null)
+    setCurrentPage('pedidos')
+  }
+
   function renderPage() {
-if (currentPage === 'nuevo-pedido') {
+    if (currentPage === 'inicio') {
+      return <Home onNavigate={navigate} />
+    }
+    if (currentPage === 'pedidos') {
   return (
-    <NuevoPedido
-      clientes={clientes}
-      productos={productos}
-      onSaveOrder={saveOrder}
+    <Pedidos
+      pedidos={pedidos}
+      onEditOrder={editOrder}
+      onDeleteOrder={deleteOrder}
+      onReadOrder={readOrder}
       onGoHome={() => setCurrentPage('inicio')}
     />
   )
 }
-function saveOrder(newOrder) {
-  setPedidos((currentOrders) => [...currentOrders, newOrder])
-}
-    if (currentPage === 'inicio') {
-      return <Home onNavigate={setCurrentPage} />
-    }
 
     if (currentPage === 'clientes') {
       return (
@@ -153,6 +181,33 @@ function saveOrder(newOrder) {
       )
     }
 
+    if (currentPage === 'nuevo-pedido') {
+      return (
+        <NuevoPedido
+          clientes={clientes}
+          productos={productos}
+          pedidoEditando={pedidoEditando}
+          onSaveOrder={saveOrder}
+          onGoHome={() => {
+            setPedidoEditando(null)
+            setCurrentPage('inicio')
+          }}
+          onFinish={finishOrder}
+        />
+      )
+    }
+
+    if (currentPage === 'pedidos') {
+      return (
+        <Pedidos
+          pedidos={pedidos}
+          onEditOrder={editOrder}
+          onDeleteOrder={deleteOrder}
+          onGoHome={() => setCurrentPage('inicio')}
+        />
+      )
+    }
+
     return (
       <main className="temporary-page">
         <button
@@ -172,11 +227,27 @@ function saveOrder(newOrder) {
   return <div className="app-shell">{renderPage()}</div>
 }
 
+function getStoredData(key) {
+  try {
+    const storedData = localStorage.getItem(key)
+    return storedData ? JSON.parse(storedData) : []
+  } catch (error) {
+    console.error(`No se pudieron recuperar los datos de ${key}:`, error)
+    return []
+  }
+}
+
+function saveStoredData(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify(data))
+  } catch (error) {
+    console.error(`No se pudieron guardar los datos de ${key}:`, error)
+  }
+}
+
 function getPageTitle(page) {
   const titles = {
-    pedidos: 'Pedidos',
     mas: 'Más',
-    'nuevo-pedido': 'Nuevo pedido',
   }
 
   return titles[page] || 'Huerpas Program'

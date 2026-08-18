@@ -1,16 +1,40 @@
 import { useRef, useState } from 'react'
 
-function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
+function NuevoPedido({
+  clientes,
+  productos,
+  pedidoEditando,
+  onSaveOrder,
+  onGoHome,
+  onFinish,
+}) {
+  const clienteInicial = pedidoEditando
+    ? clientes.find(
+        (cliente) => cliente.id === pedidoEditando.clienteId,
+      ) || {
+        id: pedidoEditando.clienteId,
+        nombre: pedidoEditando.clienteNombre,
+        localidad: pedidoEditando.clienteLocalidad || '',
+        zona: '',
+      }
+    : null
+
   const [searchClient, setSearchClient] = useState('')
-  const [selectedClient, setSelectedClient] = useState(null)
+  const [selectedClient, setSelectedClient] = useState(clienteInicial)
 
   const [searchProduct, setSearchProduct] = useState('')
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [quantity, setQuantity] = useState(1)
   const [clarification, setClarification] = useState('')
 
-  const [orderItems, setOrderItems] = useState([])
-  const [generalObservation, setGeneralObservation] = useState('')
+  const [orderItems, setOrderItems] = useState(
+    pedidoEditando?.productos || [],
+  )
+
+  const [generalObservation, setGeneralObservation] = useState(
+    pedidoEditando?.observacionGeneral || '',
+  )
+
   const [editingItemId, setEditingItemId] = useState(null)
   const [notification, setNotification] = useState('')
 
@@ -75,7 +99,9 @@ function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
   }
 
   function decreaseQuantity() {
-    setQuantity((currentQuantity) => Math.max(1, currentQuantity - 1))
+    setQuantity((currentQuantity) =>
+      Math.max(1, currentQuantity - 1),
+    )
   }
 
   function increaseQuantity() {
@@ -201,27 +227,31 @@ function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
       return
     }
 
+    const currentDate = new Date().toISOString()
+
     const order = {
-      id: crypto.randomUUID(),
+      id: pedidoEditando?.id || crypto.randomUUID(),
       clienteId: selectedClient.id,
       clienteNombre: selectedClient.nombre,
       clienteLocalidad: selectedClient.localidad || '',
-      fecha: new Date().toISOString(),
+      fecha: pedidoEditando?.fecha || currentDate,
+      fechaEdicion: pedidoEditando ? currentDate : null,
       productos: orderItems,
       observacionGeneral: generalObservation.trim(),
-      estado: 'no-leido',
-      editado: false,
+      estado: pedidoEditando ? 'editado' : 'no-leido',
+      editado: Boolean(pedidoEditando),
     }
 
     onSaveOrder(order)
-    showNotification('Pedido guardado correctamente')
 
-    setOrderItems([])
-    setGeneralObservation('')
-    resetProductForm()
+    showNotification(
+      pedidoEditando
+        ? 'Pedido actualizado correctamente'
+        : 'Pedido guardado correctamente',
+    )
 
     window.setTimeout(() => {
-      onGoHome()
+      onFinish()
     }, 700)
   }
 
@@ -229,11 +259,17 @@ function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
     return (
       <main className="page">
         <header className="page-header">
-          <button className="home-button" type="button" onClick={onGoHome}>
+          <button
+            className="home-button"
+            type="button"
+            onClick={onGoHome}
+          >
             ← Inicio
           </button>
 
-          <h1>Nuevo pedido</h1>
+          <h1>
+            {pedidoEditando ? 'Editar pedido' : 'Nuevo pedido'}
+          </h1>
         </header>
 
         <section className="select-client-heading">
@@ -275,10 +311,13 @@ function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
                   <strong>{cliente.nombre}</strong>
 
                   <span>
-                    {cliente.localidad || 'Localidad sin especificar'}
+                    {cliente.localidad ||
+                      'Localidad sin especificar'}
                   </span>
 
-                  {cliente.zona && <small>Zona: {cliente.zona}</small>}
+                  {cliente.zona && (
+                    <small>Zona: {cliente.zona}</small>
+                  )}
                 </div>
 
                 <span className="select-client-arrow">›</span>
@@ -299,11 +338,15 @@ function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
       )}
 
       <header className="page-header">
-        <button className="home-button" type="button" onClick={onGoHome}>
+        <button
+          className="home-button"
+          type="button"
+          onClick={onGoHome}
+        >
           ← Inicio
         </button>
 
-        <h1>Nuevo pedido</h1>
+        <h1>{pedidoEditando ? 'Editar pedido' : 'Nuevo pedido'}</h1>
       </header>
 
       <section className="selected-client-card">
@@ -311,7 +354,9 @@ function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
           <span className="selected-client-label">CLIENTE</span>
           <h2>{selectedClient.nombre}</h2>
 
-          {selectedClient.localidad && <p>{selectedClient.localidad}</p>}
+          {selectedClient.localidad && (
+            <p>{selectedClient.localidad}</p>
+          )}
 
           {selectedClient.zona && (
             <small>Zona: {selectedClient.zona}</small>
@@ -395,7 +440,9 @@ function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
           Aclaración
           <textarea
             value={clarification}
-            onChange={(event) => setClarification(event.target.value)}
+            onChange={(event) =>
+              setClarification(event.target.value)
+            }
             placeholder="Ejemplo: verde, caja, 500 cc..."
             rows="2"
           />
@@ -486,7 +533,9 @@ function NuevoPedido({ clientes, productos, onSaveOrder, onGoHome }) {
         type="button"
         onClick={saveOrder}
       >
-        Guardar pedido
+        {pedidoEditando
+          ? 'Guardar cambios del pedido'
+          : 'Guardar pedido'}
       </button>
     </main>
   )
