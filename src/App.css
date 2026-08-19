@@ -1147,4 +1147,58 @@ button:active {
   color: #2f6b43 !important;
   font-weight: 700;
 }
+.saved-order-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.saved-order-row .saved-order-header {
+  flex: 1;
+}
+
+.order-checkbox-wrapper {
+  width: 48px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  background: #f7faf8;
+  border-right: 1px solid #edf1ee;
+}
+
+.order-checkbox-wrapper input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.order-checkbox-custom {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #b9c7bd;
+  border-radius: 6px;
+  background: white;
+}
+
+.order-checkbox-wrapper input:checked + .order-checkbox-custom {
+  border-color: #2f6b43;
+  background: #2f6b43;
+  box-shadow: inset 0 0 0 4px white;
+}
+
+.selected-order-card {
+  border-color: #78a688;
+  box-shadow: 0 0 0 2px rgba(47, 107, 67, 0.08);
+}
+
+.select-all-orders-button {
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid #cfdcd2;
+  border-radius: 12px;
+  color: #2f6b43;
+  background: #f5f8f6;
+  font-weight: 700;
+  cursor: pointer;
+}
 }

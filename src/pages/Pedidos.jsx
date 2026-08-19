@@ -10,6 +10,7 @@ function Pedidos({
 }) {
   const [search, setSearch] = useState('')
   const [openedOrderId, setOpenedOrderId] = useState(null)
+  const [selectedOrderIds, setSelectedOrderIds] = useState([])
 
   const pedidosOrdenados = [...pedidos].sort(
     (a, b) => new Date(b.fecha) - new Date(a.fecha),
@@ -31,15 +32,60 @@ function Pedidos({
     return texto.includes(search.toLowerCase())
   })
 
-function toggleOrder(pedido) {
-  const isOpening = openedOrderId !== pedido.id
+  const pedidosSeleccionados = pedidosOrdenados.filter((pedido) =>
+    selectedOrderIds.includes(pedido.id),
+  )
 
-  setOpenedOrderId(isOpening ? pedido.id : null)
+  const todosLosFiltradosSeleccionados =
+    pedidosFiltrados.length > 0 &&
+    pedidosFiltrados.every((pedido) =>
+      selectedOrderIds.includes(pedido.id),
+    )
 
-  if (isOpening && pedido.estado !== 'leido') {
-    onReadOrder(pedido.id)
+  function toggleOrder(pedido) {
+    const isOpening = openedOrderId !== pedido.id
+
+    setOpenedOrderId(isOpening ? pedido.id : null)
+
+    if (isOpening && pedido.estado !== 'leido') {
+      onReadOrder(pedido.id)
+    }
   }
-}
+
+  function toggleSelectedOrder(orderId) {
+    setSelectedOrderIds((currentIds) => {
+      if (currentIds.includes(orderId)) {
+        return currentIds.filter((id) => id !== orderId)
+      }
+
+      return [...currentIds, orderId]
+    })
+  }
+
+  function toggleSelectAllFiltered() {
+    if (todosLosFiltradosSeleccionados) {
+      const filteredIds = pedidosFiltrados.map((pedido) => pedido.id)
+
+      setSelectedOrderIds((currentIds) =>
+        currentIds.filter((id) => !filteredIds.includes(id)),
+      )
+
+      return
+    }
+
+    setSelectedOrderIds((currentIds) => {
+      const newIds = pedidosFiltrados
+        .map((pedido) => pedido.id)
+        .filter((id) => !currentIds.includes(id))
+
+      return [...currentIds, ...newIds]
+    })
+  }
+
+  function downloadSelectedOrders() {
+    generateOrdersPdf(pedidosSeleccionados)
+  }
+
   return (
     <main className="page">
       <header className="page-header">
@@ -58,14 +104,30 @@ function toggleOrder(pedido) {
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
+
+        {pedidosFiltrados.length > 0 && (
+          <button
+            className="select-all-orders-button"
+            type="button"
+            onClick={toggleSelectAllFiltered}
+          >
+            {todosLosFiltradosSeleccionados
+              ? 'Deseleccionar visibles'
+              : 'Seleccionar visibles'}
+          </button>
+        )}
+
         <button
-  className="download-orders-button"
-  type="button"
-  onClick={() => generateOrdersPdf(pedidosFiltrados)}
-  disabled={pedidosFiltrados.length === 0}
->
-  Descargar pedidos en PDF
-</button>
+          className="download-orders-button"
+          type="button"
+          onClick={downloadSelectedOrders}
+          disabled={pedidosSeleccionados.length === 0}
+        >
+          Descargar PDF
+          {pedidosSeleccionados.length > 0
+            ? ` (${pedidosSeleccionados.length})`
+            : ''}
+        </button>
       </div>
 
       <section className="orders-list">
@@ -84,54 +146,73 @@ function toggleOrder(pedido) {
         ) : (
           pedidosFiltrados.map((pedido) => {
             const isOpen = openedOrderId === pedido.id
+            const isSelected = selectedOrderIds.includes(pedido.id)
 
             return (
-              <article className="saved-order-card" key={pedido.id}>
-                <button
-                  className="saved-order-header"
-                  type="button"
-                  onClick={() => toggleOrder(pedido)}
-                >
-                  <div>
-                    <strong>{pedido.clienteNombre}</strong>
+              <article
+                className={`saved-order-card ${
+                  isSelected ? 'selected-order-card' : ''
+                }`}
+                key={pedido.id}
+              >
+                <div className="saved-order-row">
+                  <label className="order-checkbox-wrapper">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectedOrder(pedido.id)}
+                      aria-label={`Seleccionar pedido de ${pedido.clienteNombre}`}
+                    />
 
-                    <span>
-                      {formatDate(pedido.fecha)}
-                      {pedido.clienteLocalidad
-                        ? ` · ${pedido.clienteLocalidad}`
-                        : ''}
-                    </span>
+                    <span className="order-checkbox-custom" />
+                  </label>
 
-                    <small>
-                      {pedido.productos.length}{' '}
-                      {pedido.productos.length === 1
-                        ? 'producto'
-                        : 'productos'}
-                    </small>
-                  </div>
+                  <button
+                    className="saved-order-header"
+                    type="button"
+                    onClick={() => toggleOrder(pedido)}
+                  >
+                    <div>
+                      <strong>{pedido.clienteNombre}</strong>
 
-                  <div className="saved-order-status">
-                    <span
-  className={`order-status ${
-    pedido.estado === 'editado'
-      ? 'edited'
-      : pedido.estado === 'leido'
-        ? 'read'
-        : 'unread'
-  }`}
->
-  {pedido.estado === 'editado'
-    ? 'EDITADO'
-    : pedido.estado === 'leido'
-      ? 'LEÍDO'
-      : 'NO LEÍDO'}
-</span>
+                      <span>
+                        {formatDate(pedido.fecha)}
+                        {pedido.clienteLocalidad
+                          ? ` · ${pedido.clienteLocalidad}`
+                          : ''}
+                      </span>
 
-                    <span className="order-expand-arrow">
-                      {isOpen ? '⌃' : '⌄'}
-                    </span>
-                  </div>
-                </button>
+                      <small>
+                        {pedido.productos.length}{' '}
+                        {pedido.productos.length === 1
+                          ? 'producto'
+                          : 'productos'}
+                      </small>
+                    </div>
+
+                    <div className="saved-order-status">
+                      <span
+                        className={`order-status ${
+                          pedido.estado === 'editado'
+                            ? 'edited'
+                            : pedido.estado === 'leido'
+                              ? 'read'
+                              : 'unread'
+                        }`}
+                      >
+                        {pedido.estado === 'editado'
+                          ? 'EDITADO'
+                          : pedido.estado === 'leido'
+                            ? 'LEÍDO'
+                            : 'NO LEÍDO'}
+                      </span>
+
+                      <span className="order-expand-arrow">
+                        {isOpen ? '⌃' : '⌄'}
+                      </span>
+                    </div>
+                  </button>
+                </div>
 
                 {isOpen && (
                   <div className="saved-order-detail">
