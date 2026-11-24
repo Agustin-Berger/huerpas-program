@@ -228,6 +228,7 @@ function Pedidos({
 
                           <span>Cantidad: {producto.cantidad}</span>
 
+                          {producto.variedades?.map((item) => <small key={item.id}>{item.nombre} · {item.cantidad}</small>)}
                           {producto.aclaracion && (
                             <small>
                               Aclaración: {producto.aclaracion}

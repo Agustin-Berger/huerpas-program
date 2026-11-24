@@ -6,15 +6,20 @@ import Productos from './pages/Productos'
 import NuevoPedido from './pages/NuevoPedido'
 import Pedidos from './pages/Pedidos'
 import Mas from './pages/Mas'
+import Viajes from './pages/Viajes'
 import {
   STORES,
   deleteItem,
   getAllItems,
  
   saveItem,
+  saveOrderAndClearDraft,
 } from './database/db'
 
+import { initializeSeedCatalog } from './database/seeds'
+
 import './App.css'
+import './updates.css'
 
 function App() {
   const [currentPage, setCurrentPage] =
@@ -25,9 +30,11 @@ function App() {
 
   const [clientes, setClientes] = useState([])
   const [productos, setProductos] = useState([])
+  const [semillas, setSemillas] = useState([])
   const [pedidos, setPedidos] = useState([])
 
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     async function loadDatabase() {
@@ -37,20 +44,20 @@ function App() {
           clientesGuardados,
           productosGuardados,
           pedidosGuardados,
+          semillasGuardadas,
         ] = await Promise.all([
           getAllItems(STORES.CLIENTES),
           getAllItems(STORES.PRODUCTOS),
           getAllItems(STORES.PEDIDOS),
+          initializeSeedCatalog(),
         ])
 
         setClientes(clientesGuardados)
         setProductos(productosGuardados)
         setPedidos(pedidosGuardados)
+        setSemillas(semillasGuardadas)
       } catch (error) {
-        console.error(
-          'Error cargando la base de datos:',
-          error,
-        )
+        setLoadError(error.message)
       } finally {
         setLoading(false)
       }
@@ -159,7 +166,8 @@ function App() {
     ).catch(console.error)
   }
 
-  function saveOrder(order) {
+  async function saveOrder(order, draftId) {
+    await saveOrderAndClearDraft(order, draftId)
     setPedidos((currentOrders) => {
       const exists = currentOrders.some(
         (currentOrder) =>
@@ -178,10 +186,6 @@ function App() {
       return [...currentOrders, order]
     })
 
-    saveItem(
-      STORES.PEDIDOS,
-      order,
-    ).catch(console.error)
   }
 
   function editOrder(order) {
@@ -244,6 +248,7 @@ function App() {
   setClientes(importedData.clientes)
   setProductos(importedData.productos)
   setPedidos(importedData.pedidos)
+  setSemillas(importedData.semillas)
 }
 
 function renderPage() {
@@ -251,11 +256,18 @@ function renderPage() {
     return <Home onNavigate={navigate} />
   }
 
+  if (currentPage === 'viajes') {
+    return <Viajes clientes={clientes} onGoHome={() => navigate('inicio')} />
+  }
+
   if (currentPage === 'mas') {
     return (
       <Mas
         onGoHome={() => setCurrentPage('inicio')}
         onBackupImported={applyImportedBackup}
+        productos={productos}
+        semillas={semillas}
+        onSeedsChanged={setSemillas}
       />
     )
   }
@@ -281,6 +293,7 @@ function renderPage() {
       return (
         <Productos
           productos={productos}
+          onCatalogImported={setProductos}
           onAddProduct={addProduct}
           onUpdateProduct={updateProduct}
           onDeleteProduct={deleteProduct}
@@ -297,6 +310,7 @@ function renderPage() {
           clientes={clientes}
           productos={productos}
           pedidoEditando={pedidoEditando}
+          semillas={semillas}
           onSaveOrder={saveOrder}
           onGoHome={() => {
             setPedidoEditando(null)
@@ -338,11 +352,14 @@ function renderPage() {
     )
   }
 
-  if (loading) {
+  if (loading || loadError) {
     return (
       <div className="app-shell">
         <main className="page">
-          <p>Cargando Huerpas Program...</p>
+          {loadError ? <>
+            <p role="alert">No se pudieron cargar los datos. {loadError}</p>
+            <button className="save-button" onClick={() => window.location.reload()}>Reintentar</button>
+          </> : <p>Cargando Huerpas Program…</p>}
         </main>
       </div>
     )

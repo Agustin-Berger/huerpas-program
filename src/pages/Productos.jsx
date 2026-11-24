@@ -1,3 +1,5 @@
+import CatalogImport from '../components/CatalogImport'
+import { normalizeCode, searchProducts } from '../utils/catalog'
 import { useEffect, useState } from 'react'
 
 const EMPTY_FORM = {
@@ -8,6 +10,7 @@ const EMPTY_FORM = {
 function Productos({
   productos,
   onAddProduct,
+  onCatalogImported,
   onUpdateProduct,
   onDeleteProduct,
   onGoHome,
@@ -18,11 +21,7 @@ function Productos({
   const [form, setForm] = useState(EMPTY_FORM)
   const [notification, setNotification] = useState('')
 
-  const productosFiltrados = productos.filter((producto) => {
-    const texto = `${producto.codigo} ${producto.descripcion}`.toLowerCase()
-
-    return texto.includes(search.toLowerCase())
-  })
+  const productosFiltrados = searchProducts(productos, search)
 
   useEffect(() => {
     if (!notification) return undefined
@@ -53,7 +52,7 @@ function Productos({
     setEditingProductId(producto.id)
 
     setForm({
-      codigo: producto.codigo || '',
+      codigo: String(producto.codigo ?? ''),
       descripcion: producto.descripcion || '',
     })
 
@@ -85,7 +84,7 @@ function Productos({
 
     const codigoDuplicado = productos.some(
       (producto) =>
-        producto.codigo.toLowerCase() === codigo.toLowerCase() &&
+        normalizeCode(producto.codigo) === normalizeCode(codigo) &&
         producto.id !== editingProductId,
     )
 
@@ -95,12 +94,13 @@ function Productos({
     }
 
     const productData = {
-      id: editingProductId || crypto.randomUUID(),
+      ...productos.find(({ id }) => id === editingProductId),
+      id: editingProductId ?? crypto.randomUUID(),
       codigo,
       descripcion,
     }
 
-    if (editingProductId) {
+    if (editingProductId != null) {
       onUpdateProduct(productData)
       setNotification('Producto actualizado correctamente')
     } else {
@@ -191,6 +191,7 @@ function Productos({
         </form>
       )}
 
+      <CatalogImport onImported={onCatalogImported} />
       <section className="product-list">
         {productosFiltrados.length === 0 ? (
           <div className="empty-state">

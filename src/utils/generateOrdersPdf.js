@@ -1,344 +1,111 @@
 import { jsPDF } from 'jspdf'
 
-const PAGE_WIDTH = 210
-const PAGE_HEIGHT = 297
+const margin = 8
+const gap = 7
+const width = (210 - 2 * margin - gap) / 2
+const top = 11
+const bottom = 283
+const dateFormat = new Intl.DateTimeFormat('es-AR', { dateStyle: 'short', timeStyle: 'short' })
+const states = { 'no-leido': 'NO LEÍDO', leido: 'LEÍDO', editado: 'EDITADO' }
 
-const MARGIN_X = 10
-const TOP_MARGIN = 12
-const BOTTOM_MARGIN = 12
+export function createOrdersPdf(pedidos) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+  const positions = [top, top]
+  let column = 0
+  let order
 
-const COLUMN_GAP = 8
-const COLUMN_WIDTH =
-  (PAGE_WIDTH - MARGIN_X * 2 - COLUMN_GAP) / 2
+  function pageRule() {
+    doc.setDrawColor(215)
+    doc.line(105, margin, 105, bottom)
+  }
 
-const CONTENT_TOP = 30
-const CONTENT_BOTTOM = PAGE_HEIGHT - BOTTOM_MARGIN
+  function style({ font = 'normal', size = 8 }) {
+    doc.setFont('helvetica', font)
+    doc.setFontSize(size)
+  }
+
+  function wrap(text, options = {}) {
+    style(options)
+    return doc.splitTextToSize(String(text ?? ''), width - (options.indent ?? 0)).map((text) => ({
+      text, height: 3.5, ...options,
+    }))
+  }
+
+  function draw(row) {
+    style(row)
+    const x = margin + column * (width + gap)
+    if (row.box) {
+      doc.setDrawColor(115)
+      doc.rect(x, positions[column] - 2.3, 2.5, 2.5)
+    }
+    doc.text(row.text, x + (row.indent ?? 0), positions[column])
+    positions[column] += row.height
+  }
+
+  function advance(continuation) {
+    if (column === 0) column = 1
+    else {
+      doc.addPage()
+      column = 0
+      positions.fill(top)
+      pageRule()
+    }
+    if (continuation) {
+      const shortName = String(order.clienteNombre ?? '').replace(/\s+/g, ' ').slice(0, 53)
+      wrap(`Pedido ${order.number} · continuación · ${shortName}`, { font: 'bold' }).forEach(draw)
+    }
+  }
+
+  function block(rows, { continuation = true, keep = true } = {}) {
+    const height = rows.reduce((total, row) => total + row.height, 0)
+    if (keep && positions[column] + height > bottom && height <= bottom - top - 11) advance(continuation)
+    for (const row of rows) {
+      if (positions[column] + row.height > bottom) advance(true)
+      draw(row)
+    }
+  }
+
+  pageRule()
+  const sorted = [...pedidos].sort((a, b) => new Date(a.fecha) - new Date(b.fecha))
+  sorted.forEach((pedido, index) => {
+    order = { ...pedido, number: index + 1 }
+    const date = new Date(pedido.fecha)
+    if (positions[column] + 16 > bottom) advance(false)
+    const heading = [
+      ...wrap(`Pedido ${order.number} · ${pedido.clienteNombre ?? ''}`, { font: 'bold', size: 10, height: 4.5 }),
+      ...wrap(`${Number.isNaN(date.getTime()) ? pedido.fecha ?? '' : dateFormat.format(date)} · ${states[pedido.estado] ?? 'GUARDADO'}`),
+      ...(pedido.clienteLocalidad ? wrap(pedido.clienteLocalidad) : []),
+    ]
+    block(heading, { continuation: false })
+    for (const product of pedido.productos ?? []) {
+      const description = wrap(`${product.cantidad} × ${product.codigo} — ${product.descripcion}`, { font: 'bold', indent: 4 })
+      description[0].box = true
+      const rows = [
+        ...description,
+        ...(product.aclaracion ? wrap(`Aclaración: ${product.aclaracion}`, { font: 'italic', indent: 4 }) : []),
+        ...(product.variedades ?? []).flatMap((item) => wrap(`${item.cantidad} × ${item.nombre}`, { indent: 4 })),
+      ]
+      block(rows)
+      positions[column] += 1.2
+    }
+    if (pedido.observacionGeneral) block(wrap(`Observación: ${pedido.observacionGeneral}`, { font: 'italic' }))
+    positions[column] += 4
+  })
+
+  const count = doc.getNumberOfPages()
+  for (let page = 1; page <= count; page++) {
+    doc.setPage(page)
+    style({ size: 7 })
+    doc.text(`Página ${page} de ${count}`, 210 - margin, 292, { align: 'right' })
+  }
+  return doc
+}
 
 export function generateOrdersPdf(pedidos) {
   if (!pedidos.length) {
     window.alert('No hay pedidos seleccionados para descargar.')
     return
   }
-
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  })
-
-  let column = 0
-  let y = CONTENT_TOP
-
-  function getColumnX() {
-    return column === 0
-      ? MARGIN_X
-      : MARGIN_X + COLUMN_WIDTH + COLUMN_GAP
-  }
-
-  function drawPageHeader() {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(14)
-
-    doc.text(
-      'HUERPAS DISTRIBUIDORA',
-      MARGIN_X,
-      TOP_MARGIN + 2,
-    )
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-
-    doc.text(
-      `Pedidos - ${formatDateOnly(new Date())}`,
-      MARGIN_X,
-      TOP_MARGIN + 8,
-    )
-
-    // Línea horizontal debajo del encabezado
-    doc.setDrawColor(160)
-    doc.setLineWidth(0.25)
-
-    doc.line(
-      MARGIN_X,
-      TOP_MARGIN + 12,
-      PAGE_WIDTH - MARGIN_X,
-      TOP_MARGIN + 12,
-    )
-
-    // Línea vertical entre columnas
-    const centerX = PAGE_WIDTH / 2
-
-    doc.setDrawColor(210)
-
-    doc.line(
-      centerX,
-      CONTENT_TOP - 2,
-      centerX,
-      CONTENT_BOTTOM,
-    )
-  }
-
-  function moveToNextColumn() {
-    if (column === 0) {
-      column = 1
-      y = CONTENT_TOP
-      return
-    }
-
-    doc.addPage()
-
-    column = 0
-    y = CONTENT_TOP
-
-    drawPageHeader()
-  }
-
-  function checkSpace(requiredSpace = 10) {
-    if (y + requiredSpace > CONTENT_BOTTOM) {
-      moveToNextColumn()
-    }
-  }
-
-  function writeWrappedText(
-    text,
-    x,
-    maxWidth,
-    lineHeight = 4,
-  ) {
-    const lines = doc.splitTextToSize(
-      String(text),
-      maxWidth,
-    )
-
-    lines.forEach((line) => {
-      checkSpace(lineHeight + 1)
-
-      doc.text(line, x, y)
-      y += lineHeight
-    })
-
-    return lines.length
-  }
-
-  function drawOrderSeparator() {
-    checkSpace(5)
-
-    y += 2
-
-    const x = getColumnX()
-
-    doc.setDrawColor(170)
-    doc.setLineWidth(0.25)
-
-    doc.line(
-      x,
-      y,
-      x + COLUMN_WIDTH,
-      y,
-    )
-
-    y += 5
-  }
-
-  drawPageHeader()
-
-  const pedidosOrdenados = [...pedidos].sort(
-    (a, b) =>
-      new Date(a.fecha) - new Date(b.fecha),
-  )
-
-  pedidosOrdenados.forEach((pedido, orderIndex) => {
-    // Evita empezar un pedido cuando queda muy poco espacio.
-    checkSpace(28)
-
-    const x = getColumnX()
-
-    // NOMBRE DEL CLIENTE
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10)
-
-    writeWrappedText(
-      `${orderIndex + 1}. ${pedido.clienteNombre}`,
-      x,
-      COLUMN_WIDTH,
-      4.5,
-    )
-
-    // DATOS DEL PEDIDO
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
-
-    writeWrappedText(
-      `Fecha: ${formatDate(new Date(pedido.fecha))}`,
-      x,
-      COLUMN_WIDTH,
-      3.5,
-    )
-
-    if (pedido.clienteLocalidad) {
-      writeWrappedText(
-        `Localidad: ${pedido.clienteLocalidad}`,
-        x,
-        COLUMN_WIDTH,
-        3.5,
-      )
-    }
-
-    writeWrappedText(
-      `Estado: ${getStatusLabel(pedido.estado)}`,
-      x,
-      COLUMN_WIDTH,
-      3.5,
-    )
-
-    y += 2
-
-    // PRODUCTOS
-    pedido.productos.forEach((producto) => {
-      checkSpace(12)
-
-      const productX = getColumnX()
-
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8)
-
-      writeWrappedText(
-        `${producto.codigo} - ${producto.descripcion}`,
-        productX + 2,
-        COLUMN_WIDTH - 4,
-        3.7,
-      )
-
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(7.5)
-
-      writeWrappedText(
-        `Cant: ${producto.cantidad}`,
-        productX + 4,
-        COLUMN_WIDTH - 6,
-        3.5,
-      )
-
-      if (producto.aclaracion) {
-        doc.setFont('helvetica', 'italic')
-
-        writeWrappedText(
-          `Aclaración: ${producto.aclaracion}`,
-          productX + 4,
-          COLUMN_WIDTH - 6,
-          3.5,
-        )
-
-        doc.setFont('helvetica', 'normal')
-      }
-
-      y += 1.5
-    })
-
-    // OBSERVACIÓN GENERAL
-    if (pedido.observacionGeneral) {
-      checkSpace(12)
-
-      y += 1
-
-      const observationX = getColumnX()
-
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(7.5)
-
-      writeWrappedText(
-        'Observación:',
-        observationX,
-        COLUMN_WIDTH,
-        3.5,
-      )
-
-      doc.setFont('helvetica', 'italic')
-
-      writeWrappedText(
-        pedido.observacionGeneral,
-        observationX + 2,
-        COLUMN_WIDTH - 4,
-        3.5,
-      )
-
-      doc.setFont('helvetica', 'normal')
-    }
-
-    if (orderIndex < pedidosOrdenados.length - 1) {
-      drawOrderSeparator()
-    }
-  })
-
-  addPageNumbers(doc)
-
-  const fileDate = formatFileDate(new Date())
-
-  doc.save(
-    `Pedidos_Huerpas_${fileDate}.pdf`,
-  )
-}
-
-function formatDate(date) {
-  return new Intl.DateTimeFormat('es-AR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(date)
-}
-
-function formatDateOnly(date) {
-  return new Intl.DateTimeFormat('es-AR', {
-    dateStyle: 'short',
-  }).format(date)
-}
-
-function formatFileDate(date) {
-  const year = date.getFullYear()
-
-  const month = String(
-    date.getMonth() + 1,
-  ).padStart(2, '0')
-
-  const day = String(
-    date.getDate(),
-  ).padStart(2, '0')
-
-  return `${day}-${month}-${year}`
-}
-
-function getStatusLabel(status) {
-  const labels = {
-    'no-leido': 'NO LEÍDO',
-    leido: 'LEÍDO',
-    editado: 'EDITADO',
-  }
-
-  return labels[status] || 'GUARDADO'
-}
-
-function addPageNumbers(doc) {
-  const totalPages = doc.getNumberOfPages()
-
-  for (
-    let pageNumber = 1;
-    pageNumber <= totalPages;
-    pageNumber += 1
-  ) {
-    doc.setPage(pageNumber)
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(120)
-
-    doc.text(
-      `Página ${pageNumber} de ${totalPages}`,
-      PAGE_WIDTH - MARGIN_X,
-      PAGE_HEIGHT - 5,
-      {
-        align: 'right',
-      },
-    )
-
-    doc.setTextColor(0)
-  }
+  const date = new Intl.DateTimeFormat('sv-SE').format(new Date())
+  createOrdersPdf(pedidos).save(`Pedidos_Huerpas_${date}.pdf`)
 }

@@ -1,0 +1,113 @@
+.plain-fields {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+.page { padding: 24px 20px; min-height: 100vh; }
+.page-header { display: flex; align-items: center; gap: 12px; }
+.page-header h1 { margin: 0; }
+.local-status { min-height: 1.4em; color: #2f6b43; }
+.selection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 125px), 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.selection-card {
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #dce4de;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+  background: #fff;
+}
+.selection-card.chosen { border-color: #557f61; background: #e5f4e9; }
+.product-name {
+  display: grid;
+  gap: 4px;
+  border: 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+.product-name span { font-size: .875rem; }
+.compact-quantity {
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  gap: 3px;
+  margin-top: 0;
+}
+.compact-quantity button, .compact-quantity input { min-height: 44px; }
+.compact-quantity input { padding: 2px; min-width: 0; }
+.order-workspace { padding-bottom: 165px; }
+.selection-bar {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 11;
+  margin-inline: auto;
+  width: min(100%, 500px);
+  padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+  color: #1d3a29;
+  background: #e5f4e9;
+  border-top: 1px solid #b4cdbb;
+  box-shadow: 0 -4px 18px #172c221a;
+}
+.selection-actions, .trip-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.selection-actions button, .trip-actions button, .selection-card button, .trip-table button { min-height: 44px; }
+.selection-actions .add-product-button { flex: 1 1 100%; padding: 8px; }
+.selection-actions .edit-button { flex: 1; min-width: 0; }
+.plain-fields button:disabled { opacity: .55; cursor: default; }
+.order-item-information { min-width: 0; overflow-wrap: anywhere; }
+.order-item-information small { white-space: pre-wrap; }
+.backup-section input[type=file] { max-width: 100%; }
+.plain-fields select {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 6px;
+  border: 1px solid #d9e1db;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+.trip-page { background: #f8faf8; }
+.app-shell:has(.trip-page) { max-width: 1000px; }
+.totals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 128px), 1fr));
+  gap: 6px;
+}
+.totals-grid > div { padding: 8px; border: 1px solid #dce4de; border-radius: 8px; background: white; overflow-wrap: anywhere; }
+.totals-grid dt { font-size: .8rem; }
+.totals-grid dd { margin: 3px 0 0; font-weight: 700; }
+.trip-actions [aria-pressed=true] { background: #2f6b43; color: white; }
+.trip-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
+.trip-table th, .trip-table td { padding: 5px 8px; border-bottom: 1px solid #dce4de; text-align: left; overflow-wrap: anywhere; }
+.trip-table th { background: #e5f4e9; font-size: .875rem; }
+.trip-table small { display: block; }
+.row-link { color: #25583a; border: 0; background: none; padding: 0; cursor: pointer; font: inherit; text-align: left; text-decoration: underline; }
+.payment-fields, .check-fields { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.check-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; }
+.trip-editor input, .trip-editor select, .order-workspace input, .order-workspace textarea { font-size: 16px; }
+@media (max-width: 640px) {
+  .trip-table thead { position: absolute; clip-path: inset(50%); }
+  .trip-table, .trip-table tbody, .trip-table tr { display: block; }
+  .trip-table { background: none; }
+  .trip-table tr { margin-bottom: 10px; padding: 8px; border: 1px solid #dce4de; border-radius: 12px; background: white; }
+  .trip-table td { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); align-items: center; padding: 3px; min-height: 32px; }
+  .trip-table td::before { content: attr(data-label); color: #536158; font-size: .8rem; }
+  .trip-table td small { grid-column: 2; }
+  .trip-table td:last-child { display: flex; gap: 8px; border: 0; }
+}
+@media (min-width: 700px) {
+  .selection-actions .add-product-button { flex-basis: auto; }
+}

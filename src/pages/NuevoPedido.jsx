@@ -1,544 +1,261 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Quantity from '../components/Quantity'
+import SeedPicker from '../components/SeedPicker'
+import { getItem, saveItem, STORES } from '../database/db'
+import { normalizeCode, normalizeText, searchProducts } from '../utils/catalog'
+import { mergeOrderItems, seedEntries, totalQuantity } from '../utils/orders'
 
-function NuevoPedido({
-  clientes,
-  productos,
-  pedidoEditando,
-  onSaveOrder,
-  onGoHome,
-  onFinish,
-}) {
-  const clienteInicial = pedidoEditando
-    ? clientes.find(
-        (cliente) => cliente.id === pedidoEditando.clienteId,
-      ) || {
-        id: pedidoEditando.clienteId,
-        nombre: pedidoEditando.clienteNombre,
-        localidad: pedidoEditando.clienteLocalidad || '',
-        zona: '',
+export default function NuevoPedido({ clientes, productos, pedidoEditando, semillas, onSaveOrder, onGoHome, onFinish }) {
+  const [client, setClient] = useState(() => pedidoEditando && (
+    clientes.find(({ id }) => id === pedidoEditando.clienteId) ?? {
+      id: pedidoEditando.clienteId,
+      nombre: pedidoEditando.clienteNombre,
+      localidad: pedidoEditando.clienteLocalidad,
+    }
+  ))
+  const [search, setSearch] = useState('')
+  const filtered = clientes.filter((item) => normalizeText([item.nombre, item.localidad, item.direccion, item.zona].join(' ')).includes(normalizeText(search)))
+
+  if (client) return <OrderDraft key={client.id} {...{
+    client, productos, pedidoEditando, semillas, onSaveOrder, onGoHome, onFinish,
+    onChangeClient: pedidoEditando ? undefined : () => setClient(null),
+  }} />
+  return <main className="page">
+    <header className="page-header"><button className="home-button" onClick={onGoHome}>← Inicio</button><h1>Nuevo pedido</h1></header>
+    <section className="select-client-heading"><h2>Seleccioná un cliente</h2></section>
+    <input className="search-input" type="search" placeholder="Buscar por nombre, localidad o zona" aria-label="Buscar cliente"
+      value={search} onChange={(event) => setSearch(event.target.value)} />
+    <section className="order-client-list">
+      {filtered.length === 0 && <p>{clientes.length ? 'No encontramos clientes.' : 'Primero agregá un cliente desde Clientes.'}</p>}
+      {filtered.map((item) => <button className="select-client-card" key={item.id} onClick={() => setClient(item)}>
+        <div><strong>{item.nombre}</strong><span>{item.localidad}</span><small>{item.zona}</small></div>
+        <span className="select-client-arrow">›</span>
+      </button>)}
+    </section>
+  </main>
+}
+
+function OrderDraft({ client, productos, pedidoEditando, semillas, onSaveOrder, onGoHome, onFinish, onChangeClient }) {
+  const draftId = JSON.stringify(pedidoEditando ? ['pedido', pedidoEditando.id, client.id] : ['nuevo', client.id])
+  const [draft, setDraft] = useState(null)
+  const current = useRef(null)
+  const queue = useRef(Promise.resolve())
+  const locked = useRef(false)
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+  const [search, setSearch] = useState('')
+  const [review, setReview] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [picker, setPicker] = useState(null)
+  const seedProductId = semillas.find(({ id }) => id === 'producto')?.productId
+  const varieties = semillas.filter(({ id, reemplazadaPor }) => id !== 'producto' && !reemplazadaPor)
+
+  useEffect(() => {
+    let active = true
+    getItem(STORES.BORRADORES, draftId).then((saved) => {
+      if (!active) return
+      current.current = saved ?? {
+        id: draftId,
+        orderId: pedidoEditando?.id ?? crypto.randomUUID(),
+        selected: [],
+        items: pedidoEditando?.productos ?? [],
+        observation: pedidoEditando?.observacionGeneral ?? '',
       }
-    : null
+      setDraft(current.current)
+    }).catch((error) => { if (active) setStatus(error.message) })
+    return () => { active = false }
+  }, [draftId, pedidoEditando])
 
-  const [searchClient, setSearchClient] = useState('')
-  const [selectedClient, setSelectedClient] = useState(clienteInicial)
+  function update(patch) {
+    if (locked.current) return
+    const next = { ...current.current, ...patch }
+    current.current = next
+    setDraft(next)
+    setStatus('Guardando borrador…')
+    queue.current = queue.current.then(async () => {
+      try {
+        await saveItem(STORES.BORRADORES, next)
+        if (current.current === next) setStatus('Borrador guardado.')
+      } catch (error) {
+        if (current.current === next) setStatus(`No se guardó el borrador. ${error.message}`)
 
-  const [searchProduct, setSearchProduct] = useState('')
-  const [selectedProduct, setSelectedProduct] = useState(null)
-  const [quantity, setQuantity] = useState(1)
-  const [clarification, setClarification] = useState('')
-
-  const [orderItems, setOrderItems] = useState(
-    pedidoEditando?.productos || [],
-  )
-
-  const [generalObservation, setGeneralObservation] = useState(
-    pedidoEditando?.observacionGeneral || '',
-  )
-
-  const [editingItemId, setEditingItemId] = useState(null)
-  const [notification, setNotification] = useState('')
-
-  const productSearchRef = useRef(null)
-
-  const clientesFiltrados = clientes.filter((cliente) => {
-    const texto = [
-      cliente.nombre,
-      cliente.localidad,
-      cliente.direccion,
-      cliente.zona,
-    ]
-      .join(' ')
-      .toLowerCase()
-
-    return texto.includes(searchClient.toLowerCase())
-  })
-
-  const productosFiltrados =
-    searchProduct.trim().length === 0
-      ? []
-      : productos.filter((producto) => {
-          const texto =
-            `${producto.codigo} ${producto.descripcion}`.toLowerCase()
-
-          return texto.includes(searchProduct.toLowerCase())
-        })
-
-  function showNotification(message) {
-    setNotification(message)
-
-    window.setTimeout(() => {
-      setNotification('')
-    }, 2500)
-  }
-
-  function selectClient(cliente) {
-    setSelectedClient(cliente)
-    setSearchClient('')
-  }
-
-  function changeClient() {
-    if (orderItems.length > 0) {
-      const confirmed = window.confirm(
-        'Si cambiás el cliente, se eliminarán los productos cargados. ¿Continuar?',
-      )
-
-      if (!confirmed) return
-    }
-
-    setSelectedClient(null)
-    setOrderItems([])
-    setGeneralObservation('')
-    resetProductForm()
-  }
-
-  function selectProduct(producto) {
-    setSelectedProduct(producto)
-    setSearchProduct(`${producto.codigo} - ${producto.descripcion}`)
-    setQuantity(1)
-    setClarification('')
-  }
-
-  function decreaseQuantity() {
-    setQuantity((currentQuantity) =>
-      Math.max(1, currentQuantity - 1),
-    )
-  }
-
-  function increaseQuantity() {
-    setQuantity((currentQuantity) => currentQuantity + 1)
-  }
-
-  function handleQuantityChange(event) {
-    const value = Number(event.target.value)
-
-    if (!Number.isFinite(value)) return
-
-    setQuantity(Math.max(1, Math.floor(value)))
-  }
-
-  function addProductToOrder() {
-    if (!selectedProduct) {
-      alert('Seleccioná un producto.')
-      return
-    }
-
-    if (quantity < 1) {
-      alert('La cantidad debe ser mayor a cero.')
-      return
-    }
-
-    const productAlreadyExists = orderItems.some(
-      (item) =>
-        item.productId === selectedProduct.id &&
-        item.id !== editingItemId,
-    )
-
-    if (productAlreadyExists && !editingItemId) {
-      const repeatProduct = window.confirm(
-        'Este producto ya existe en el pedido. ¿Deseás repetirlo?',
-      )
-
-      if (!repeatProduct) return
-    }
-
-    const itemData = {
-      id: editingItemId || crypto.randomUUID(),
-      productId: selectedProduct.id,
-      codigo: selectedProduct.codigo,
-      descripcion: selectedProduct.descripcion,
-      cantidad: quantity,
-      aclaracion: clarification.trim(),
-    }
-
-    if (editingItemId) {
-      setOrderItems((currentItems) =>
-        currentItems.map((item) =>
-          item.id === editingItemId ? itemData : item,
-        ),
-      )
-
-      showNotification('Producto actualizado')
-    } else {
-      setOrderItems((currentItems) => [...currentItems, itemData])
-      showNotification('Producto agregado al pedido')
-    }
-
-    resetProductForm()
-  }
-
-  function editOrderItem(item) {
-    const producto = productos.find(
-      (currentProduct) => currentProduct.id === item.productId,
-    )
-
-    if (!producto) {
-      alert('El producto ya no existe en la base de productos.')
-      return
-    }
-
-    setEditingItemId(item.id)
-    setSelectedProduct(producto)
-    setSearchProduct(`${producto.codigo} - ${producto.descripcion}`)
-    setQuantity(item.cantidad)
-    setClarification(item.aclaracion || '')
-
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth',
+      }
     })
   }
 
-  function deleteOrderItem(itemId) {
-    const confirmed = window.confirm(
-      '¿Querés eliminar este producto del pedido?',
-    )
-
-    if (!confirmed) return
-
-    setOrderItems((currentItems) =>
-      currentItems.filter((item) => item.id !== itemId),
-    )
-
-    if (editingItemId === itemId) {
-      resetProductForm()
+  async function persist(action) {
+    if (locked.current) return
+    locked.current = true
+    setBusy(true)
+    try {
+      await queue.current
+      await action()
+    } catch (error) {
+      setStatus(`No se guardaron los cambios. ${error.message}`)
+    } finally {
+      locked.current = false
+      setBusy(false)
     }
   }
 
-  function resetProductForm() {
-    setEditingItemId(null)
-    setSelectedProduct(null)
-    setSearchProduct('')
-    setQuantity(1)
-    setClarification('')
-
-    window.setTimeout(() => {
-      productSearchRef.current?.focus()
-    }, 0)
+  function select(product, cantidad, details) {
+    const selected = current.current.selected.filter(({ id }) => id !== product.id)
+    if (cantidad > 0) {
+      const { id, codigo, descripcion } = product
+      selected.push({ id, codigo, descripcion, cantidad, ...(details && { variedades: details }) })
+    }
+    update({ selected })
   }
 
-  function saveOrder() {
-    if (!selectedClient) {
-      alert('Seleccioná un cliente.')
-      return
-    }
+  function chosen(product) {
+    return draft.selected.find(({ id }) => id === product.id)
+  }
 
-    if (orderItems.length === 0) {
-      alert('Agregá al menos un producto.')
-      return
-    }
+  function openProduct(product) {
+    const entry = chosen(product)
+    if (product.id === seedProductId || entry?.variedades) {
+      setPicker({ product, initial: entry ? seedEntries(entry) : [] })
+    } else if (!entry) select(product, 1)
+  }
 
-    const currentDate = new Date().toISOString()
+  async function addBatch() {
+    await persist(async () => {
+      const base = current.current
+      if (!base.selected.length) return
+      const next = { ...base, selected: [], items: mergeOrderItems(base.items, base.selected, seedProductId) }
+      await saveItem(STORES.BORRADORES, next)
+      current.current = next
+      setDraft(next)
+      setReview(false)
+      setStatus('Selección agregada al borrador.')
+    })
+  }
 
-    const order = {
-      id: pedidoEditando?.id || crypto.randomUUID(),
-      clienteId: selectedClient.id,
-      clienteNombre: selectedClient.nombre,
-      clienteLocalidad: selectedClient.localidad || '',
-      fecha: pedidoEditando?.fecha || currentDate,
-      fechaEdicion: pedidoEditando ? currentDate : null,
-      productos: orderItems,
-      observacionGeneral: generalObservation.trim(),
-      estado: pedidoEditando ? 'editado' : 'no-leido',
-      editado: Boolean(pedidoEditando),
-    }
-
-    onSaveOrder(order)
-
-    showNotification(
-      pedidoEditando
-        ? 'Pedido actualizado correctamente'
-        : 'Pedido guardado correctamente',
-    )
-
-    window.setTimeout(() => {
+  async function saveOrder() {
+    await persist(async () => {
+      const { items, orderId, observation, selected } = current.current
+      if (editing || picker || !items.length || selected.length) {
+        setStatus('Terminá la edición, agregá o limpiá la selección y cargá al menos un producto.')
+        return
+      }
+      const now = new Date().toISOString()
+      await onSaveOrder({
+        ...pedidoEditando,
+        id: orderId,
+        clienteId: client.id,
+        clienteNombre: client.nombre,
+        clienteLocalidad: client.localidad ?? '',
+        fecha: pedidoEditando?.fecha ?? now,
+        fechaEdicion: pedidoEditando ? now : null,
+        productos: items,
+        observacionGeneral: observation.trim(),
+        estado: pedidoEditando ? 'editado' : 'no-leido',
+        editado: Boolean(pedidoEditando),
+      }, draftId)
       onFinish()
-    }, 700)
+    })
   }
 
-  if (!selectedClient) {
-    return (
-      <main className="page">
-        <header className="page-header">
-          <button
-            className="home-button"
-            type="button"
-            onClick={onGoHome}
-          >
-            ← Inicio
-          </button>
+  function leave(go) {
+    if (!draft) { go(); return }
+    void persist(async () => {
+      await saveItem(STORES.BORRADORES, current.current)
+      go()
+    })
+  }
 
-          <h1>
-            {pedidoEditando ? 'Editar pedido' : 'Nuevo pedido'}
-          </h1>
-        </header>
+  const hasSearch = Boolean(search.trim())
+  const results = hasSearch ? searchProducts(productos, search) : []
+  const visible = review ? draft?.selected ?? [] : results
+  const emptyMessage = review
+    ? 'La selección está vacía.'
+    : hasSearch ? 'No encontramos productos.' : 'Ingresá un código o descripción para buscar artículos'
 
-        <section className="select-client-heading">
-          <p>Paso 1</p>
-          <h2>Seleccioná un cliente</h2>
-        </section>
-
-        <input
-          className="search-input"
-          type="search"
-          placeholder="Buscar por nombre, localidad o zona"
-          value={searchClient}
-          onChange={(event) => setSearchClient(event.target.value)}
-          autoFocus
-        />
-
-        <section className="order-client-list">
-          {clientes.length === 0 ? (
-            <div className="empty-state">
-              <span>👥</span>
-              <h2>No hay clientes cargados</h2>
-              <p>Primero agregá clientes desde la pantalla Clientes.</p>
-            </div>
-          ) : clientesFiltrados.length === 0 ? (
-            <div className="empty-state">
-              <span>🔍</span>
-              <h2>No encontramos clientes</h2>
-              <p>Probá buscando por otro nombre, localidad o zona.</p>
-            </div>
-          ) : (
-            clientesFiltrados.map((cliente) => (
-              <button
-                className="select-client-card"
-                type="button"
-                key={cliente.id}
-                onClick={() => selectClient(cliente)}
-              >
-                <div>
-                  <strong>{cliente.nombre}</strong>
-
-                  <span>
-                    {cliente.localidad ||
-                      'Localidad sin especificar'}
-                  </span>
-
-                  {cliente.zona && (
-                    <small>Zona: {cliente.zona}</small>
-                  )}
-                </div>
-
-                <span className="select-client-arrow">›</span>
+  return <main className="page order-workspace">
+    <header className="page-header">
+      <button className="home-button" disabled={busy} onClick={() => leave(onGoHome)}>← Inicio</button>
+      <h1>{pedidoEditando ? 'Editar pedido' : 'Nuevo pedido'}</h1>
+    </header>
+    <section className="selected-client-card">
+      <div><h2>{client.nombre}</h2><p>{client.localidad}</p><small>{client.zona}</small></div>
+      {onChangeClient && <button className="change-client-button" disabled={busy} onClick={() => leave(onChangeClient)}>Cambiar cliente</button>}
+    </section>
+    <p role="status" className="local-status">{status || (!draft ? 'Cargando borrador…' : '')}</p>
+    {draft && <fieldset className="plain-fields" disabled={busy}>
+      {picker ? <SeedPicker varieties={varieties} initial={picker.initial} onCancel={() => setPicker(null)} onConfirm={(details) => {
+        if (picker.line) setEditing({ ...editing, variedades: details, cantidad: totalQuantity(details) })
+        else select(picker.product, totalQuantity(details), details)
+        setPicker(null)
+      }} /> : <section className="product-entry">
+        <h2>{review ? 'Revisar selección' : 'Productos'}</h2>
+        {!review && <input className="search-input" type="search" aria-label="Buscar producto" placeholder="Buscar por código o descripción"
+          value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            const exact = results.filter((item) => normalizeCode(item.codigo) === normalizeCode(search))
+            if (exact.length === 1 && normalizeCode(search)) openProduct(exact[0])
+          }} />}
+        <div className="selection-grid">
+          {visible.map((product) => {
+            const entry = chosen(product)
+            const special = product.id === seedProductId || Boolean(entry?.variedades)
+            return <article key={product.id} className={`selection-card ${entry ? 'chosen' : ''}`}>
+              <button className="product-name" onClick={() => openProduct(product)} aria-pressed={Boolean(entry)}>
+                <strong>{product.codigo}</strong><span>{product.descripcion}</span>
               </button>
-            ))
-          )}
-        </section>
-      </main>
-    )
-  }
-
-  return (
-    <main className="page">
-      {notification && (
-        <div className="notification" role="status">
-          ✓ {notification}
-        </div>
-      )}
-
-      <header className="page-header">
-        <button
-          className="home-button"
-          type="button"
-          onClick={onGoHome}
-        >
-          ← Inicio
-        </button>
-
-        <h1>{pedidoEditando ? 'Editar pedido' : 'Nuevo pedido'}</h1>
-      </header>
-
-      <section className="selected-client-card">
-        <div>
-          <span className="selected-client-label">CLIENTE</span>
-          <h2>{selectedClient.nombre}</h2>
-
-          {selectedClient.localidad && (
-            <p>{selectedClient.localidad}</p>
-          )}
-
-          {selectedClient.zona && (
-            <small>Zona: {selectedClient.zona}</small>
-          )}
-        </div>
-
-        <button
-          className="change-client-button"
-          type="button"
-          onClick={changeClient}
-        >
-          Cambiar
-        </button>
-      </section>
-
-      <section className="product-entry">
-        <h2>
-          {editingItemId ? 'Editar producto' : 'Agregar producto'}
-        </h2>
-
-        <div className="product-search-wrapper">
-          <input
-            ref={productSearchRef}
-            className="search-input"
-            type="search"
-            placeholder="Buscar por código o descripción"
-            value={searchProduct}
-            onChange={(event) => {
-              setSearchProduct(event.target.value)
-              setSelectedProduct(null)
-            }}
-            autoComplete="off"
-          />
-
-          {productosFiltrados.length > 0 && !selectedProduct && (
-            <div className="product-results">
-              {productosFiltrados.slice(0, 8).map((producto) => (
-                <button
-                  type="button"
-                  key={producto.id}
-                  onClick={() => selectProduct(producto)}
-                >
-                  {producto.codigo} - {producto.descripcion}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {selectedProduct && (
-          <div className="selected-product">
-            <strong>
-              {selectedProduct.codigo} - {selectedProduct.descripcion}
-            </strong>
-          </div>
-        )}
-
-        <div className="quantity-section">
-          <label>Cantidad</label>
-
-          <div className="quantity-control">
-            <button type="button" onClick={decreaseQuantity}>
-              −
-            </button>
-
-            <input
-              type="number"
-              min="1"
-              inputMode="numeric"
-              value={quantity}
-              onChange={handleQuantityChange}
-            />
-
-            <button type="button" onClick={increaseQuantity}>
-              +
-            </button>
-          </div>
-        </div>
-
-        <label className="clarification-field">
-          Aclaración
-          <textarea
-            value={clarification}
-            onChange={(event) =>
-              setClarification(event.target.value)
-            }
-            placeholder="Ejemplo: verde, caja, 500 cc..."
-            rows="2"
-          />
-        </label>
-
-        <div className="product-form-actions">
-          {editingItemId && (
-            <button
-              className="cancel-edit-button"
-              type="button"
-              onClick={resetProductForm}
-            >
-              Cancelar
-            </button>
-          )}
-
-          <button
-            className="add-product-button"
-            type="button"
-            onClick={addProductToOrder}
-          >
-            {editingItemId
-              ? 'Guardar cambios'
-              : 'Agregar al pedido'}
-          </button>
-        </div>
-      </section>
-
-      <section className="order-summary">
-        <div className="order-summary-heading">
-          <h2>Productos del pedido</h2>
-          <span>{orderItems.length}</span>
-        </div>
-
-        {orderItems.length === 0 ? (
-          <div className="compact-empty-state">
-            Todavía no agregaste productos.
-          </div>
-        ) : (
-          orderItems.map((item) => (
-            <article className="order-item" key={item.id}>
-              <div className="order-item-information">
-                <strong>
-                  {item.codigo} - {item.descripcion}
-                </strong>
-
-                <span>Cantidad: {item.cantidad}</span>
-
-                {item.aclaracion && (
-                  <small>Aclaración: {item.aclaracion}</small>
-                )}
-              </div>
-
-              <div className="order-item-actions">
-                <button
-                  type="button"
-                  onClick={() => editOrderItem(item)}
-                >
-                  Editar
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => deleteOrderItem(item.id)}
-                >
-                  ×
-                </button>
-              </div>
+              {special
+                ? <button className="edit-button" onClick={() => openProduct(product)}>Variedades · {entry?.cantidad ?? 0}</button>
+                : <Quantity label={String(product.codigo)} value={entry?.cantidad ?? 0} onChange={(value) => select(product, value)} />}
             </article>
-          ))
-        )}
+          })}
+        </div>
+        {visible.length === 0 && <p>{emptyMessage}</p>}
+      </section>}
+      <section className="order-summary">
+        <div className="order-summary-heading"><h2>Productos del pedido</h2><span>{draft.items.length}</span></div>
+        {draft.items.map((item) => <article className="order-item" key={item.id}>
+          {editing?.id === item.id ? <div className="order-item-information">
+            <strong>{item.codigo} — {item.descripcion}</strong>
+            {editing.variedades || item.productId === seedProductId
+              ? <button className="edit-button" onClick={() => setPicker({ line: true, initial: seedEntries(editing) })}>Editar variedades · {editing.cantidad}</button>
+              : <Quantity label={String(item.codigo)} min={1} value={editing.cantidad} onChange={(cantidad) => setEditing({ ...editing, cantidad })} />}
+            <label className="clarification-field">Aclaración<textarea value={editing.aclaracion ?? ''} onChange={(event) => setEditing({ ...editing, aclaracion: event.target.value })} /></label>
+            <div className="product-form-actions">
+              <button className="cancel-edit-button" onClick={() => setEditing(null)}>Cancelar</button>
+              <button className="add-product-button" disabled={!editing.cantidad || Boolean(picker)} onClick={() => {
+                update({ items: draft.items.map((line) => line.id === item.id ? editing : line) })
+                setEditing(null)
+              }}>Guardar línea</button>
+            </div>
+          </div> : <>
+            <div className="order-item-information">
+              <strong>{item.codigo} — {item.descripcion}</strong>
+              <span>Cantidad {item.cantidad}</span>
+              {item.aclaracion && <small>{item.aclaracion}</small>}
+              {item.variedades?.map((variety) => <small key={variety.id}>{variety.nombre} · {variety.cantidad}</small>)}
+            </div>
+            <div className="order-item-actions">
+              <button disabled={Boolean(editing || picker)} onClick={() => setEditing({ ...item, cantidad: Number(item.cantidad) })}>Editar</button>
+              <button disabled={Boolean(editing || picker)} aria-label={`Eliminar ${item.descripcion}`} onClick={() => {
+                if (window.confirm('¿Querés eliminar esta línea del borrador?')) update({ items: draft.items.filter((line) => line.id !== item.id) })
+              }}>×</button>
+            </div>
+          </>}
+        </article>)}
       </section>
-
-      <label className="general-observation">
-        Observación general del pedido
-        <textarea
-          value={generalObservation}
-          onChange={(event) =>
-            setGeneralObservation(event.target.value)
-          }
-          placeholder="Información general opcional"
-          rows="3"
-        />
+      <label className="general-observation">Observación general
+        <textarea rows="3" value={draft.observation} onChange={(event) => update({ observation: event.target.value })} />
       </label>
-
-      <button
-        className="save-order-button"
-        type="button"
-        onClick={saveOrder}
-      >
-        {pedidoEditando
-          ? 'Guardar cambios del pedido'
-          : 'Guardar pedido'}
-      </button>
-    </main>
-  )
+      <button className="save-order-button" onClick={saveOrder} disabled={Boolean(editing || picker)}>Guardar pedido</button>
+      {!picker && <section className="selection-bar" aria-label="Selección de productos">
+        <strong aria-live="polite">{draft.selected.length} productos · {totalQuantity(draft.selected)} unidades</strong>
+        <div className="selection-actions">
+          <button className="edit-button" disabled={!review && !draft.selected.length} onClick={() => setReview(!review)}>{review ? 'Volver a productos' : 'Revisar selección'}</button>
+          <button className="edit-button" disabled={!draft.selected.length} onClick={() => {
+            if (window.confirm('¿Querés limpiar la selección?')) update({ selected: [] })
+          }}>Limpiar selección</button>
+          <button className="add-product-button" disabled={!draft.selected.length || Boolean(editing)} onClick={addBatch}>Agregar al pedido</button>
+        </div>
+      </section>}
+    </fieldset>}
+  </main>
 }
-
-export default NuevoPedido

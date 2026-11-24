@@ -1,153 +1,92 @@
 const DB_NAME = 'HuerpasProgram'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 export const STORES = {
   CLIENTES: 'clientes',
   PRODUCTOS: 'productos',
   PEDIDOS: 'pedidos',
+  BORRADORES: 'borradores',
+  SEMILLAS: 'semillas',
+  VIAJES: 'viajes',
 }
 
-let databasePromise = null
+let databasePromise
 
 function openDatabase() {
-  if (databasePromise) {
-    return databasePromise
-  }
-
-  databasePromise = new Promise((resolve, reject) => {
+  databasePromise ??= new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
-
-    request.onerror = () => {
-      reject(request.error)
-    }
-
+    request.onerror = () => reject(request.error)
+    request.onblocked = () => reject(new Error('Cerrá otras pestañas de Huerpas y recargá para actualizar los datos.'))
     request.onsuccess = () => {
-      resolve(request.result)
+      const db = request.result
+      db.onversionchange = () => {
+        db.close()
+        databasePromise = undefined
+      }
+      resolve(db)
     }
-
     request.onupgradeneeded = () => {
       const db = request.result
-
-      if (!db.objectStoreNames.contains(STORES.CLIENTES)) {
-        db.createObjectStore(STORES.CLIENTES, {
-          keyPath: 'id',
-        })
-      }
-
-      if (!db.objectStoreNames.contains(STORES.PRODUCTOS)) {
-        const productosStore = db.createObjectStore(
-          STORES.PRODUCTOS,
-          {
-            keyPath: 'id',
-          },
-        )
-
-        productosStore.createIndex(
-          'codigo',
-          'codigo',
-          {
-            unique: false,
-          },
-        )
-      }
-
-      if (!db.objectStoreNames.contains(STORES.PEDIDOS)) {
-        const pedidosStore = db.createObjectStore(
-          STORES.PEDIDOS,
-          {
-            keyPath: 'id',
-          },
-        )
-
-        pedidosStore.createIndex(
-          'clienteId',
-          'clienteId',
-          {
-            unique: false,
-          },
-        )
-
-        pedidosStore.createIndex(
-          'fecha',
-          'fecha',
-          {
-            unique: false,
-          },
-        )
+      for (const name of Object.values(STORES)) {
+        if (db.objectStoreNames.contains(name)) continue
+        const store = db.createObjectStore(name, { keyPath: 'id' })
+        if (name === STORES.PRODUCTOS) store.createIndex('codigo', 'codigo')
+        if (name === STORES.PEDIDOS) {
+          store.createIndex('clienteId', 'clienteId')
+          store.createIndex('fecha', 'fecha')
+        }
       }
     }
+  }).catch((error) => {
+    databasePromise = undefined
+    throw error
   })
-
   return databasePromise
 }
 
-export async function getAllItems(storeName) {
+export async function transaction(names, mode, work) {
   const db = await openDatabase()
-
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(
-      storeName,
-      'readonly',
-    )
-
-    const store = transaction.objectStore(storeName)
-    const request = store.getAll()
-
-    request.onsuccess = () => {
-      resolve(request.result)
+    const tx = db.transaction(names, mode)
+    let result
+    let error
+    const fail = (cause) => {
+      error = cause
+      tx.abort()
     }
-
-    request.onerror = () => {
-      reject(request.error)
+    tx.oncomplete = () => resolve(result)
+    tx.onabort = () => reject(error ?? tx.error ?? new Error('Se canceló la operación.'))
+    try {
+      work((name) => tx.objectStore(name), (value) => { result = value }, fail)
+    } catch (cause) {
+      fail(cause)
     }
   })
 }
 
-export async function saveItem(storeName, item) {
-  const db = await openDatabase()
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(
-      storeName,
-      'readwrite',
-    )
-
-    const store = transaction.objectStore(storeName)
-
-    store.put(item)
-
-    transaction.oncomplete = () => {
-      resolve()
-    }
-
-    transaction.onerror = () => {
-      reject(transaction.error)
-    }
+export function getAllItems(name) {
+  return transaction([name], 'readonly', (store, result) => {
+    store(name).getAll().onsuccess = (event) => result(event.target.result)
   })
 }
 
-export async function deleteItem(storeName, id) {
-  const db = await openDatabase()
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(
-      storeName,
-      'readwrite',
-    )
-
-    const store = transaction.objectStore(storeName)
-
-    store.delete(id)
-
-    transaction.oncomplete = () => {
-      resolve()
-    }
-
-    transaction.onerror = () => {
-      reject(transaction.error)
-    }
+export function getItem(name, id) {
+  return transaction([name], 'readonly', (store, result) => {
+    store(name).get(id).onsuccess = (event) => result(event.target.result)
   })
 }
 
+export function saveItem(name, item) {
+  return transaction([name], 'readwrite', (store) => store(name).put(item))
+}
 
+export function deleteItem(name, id) {
+  return transaction([name], 'readwrite', (store) => store(name).delete(id))
+}
 
+export function saveOrderAndClearDraft(order, draftId) {
+  return transaction([STORES.PEDIDOS, STORES.BORRADORES], 'readwrite', (store) => {
+    store(STORES.PEDIDOS).put(order)
+    store(STORES.BORRADORES).delete(draftId)
+  })
+}

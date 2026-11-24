@@ -62,6 +62,13 @@ function Home({ onNavigate }) {
         />
 
         <MenuButton
+          icon="🚚"
+          title="Planilla de viaje"
+          description="Cobros, reparto y gastos"
+          onClick={() => onNavigate('viajes')}
+        />
+
+        <MenuButton
           icon="•••"
           title="Más"
           description="Datos, respaldos y configuración"

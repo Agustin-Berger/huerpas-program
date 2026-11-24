@@ -1,124 +1,48 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
+import { exportBackup, readBackup, restoreBackup } from '../database/backup'
+import SeedSettings from '../components/SeedSettings'
 
-import {
-  exportBackup,
-  importBackup,
-} from '../database/backup'
+export default function Mas({ onGoHome, onBackupImported, productos, semillas, onSeedsChanged }) {
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
 
-function Mas({
-  onGoHome,
-  onBackupImported,
-}) {
-  const fileInputRef = useRef(null)
-
-  const [message, setMessage] =
-    useState('')
-
-  async function handleExport() {
+  async function run(operation) {
+    setBusy(true)
     try {
-      await exportBackup()
-
-      setMessage(
-        'Respaldo descargado correctamente.',
-      )
+      await operation()
     } catch (error) {
-      console.error(error)
-
-      setMessage(
-        'No se pudo generar el respaldo.',
-      )
-    }
-  }
-
-  async function handleImport(event) {
-    const file = event.target.files?.[0]
-
-    if (!file) return
-
-    const confirmed = window.confirm(
-      'Los datos del archivo se agregarán o actualizarán en esta instalación. ¿Continuar?',
-    )
-
-    if (!confirmed) {
-      event.target.value = ''
-      return
-    }
-
-    try {
-      const importedData =
-        await importBackup(file)
-
-      onBackupImported(importedData)
-
-      setMessage(
-        'Datos importados correctamente.',
-      )
-    } catch (error) {
-      console.error(error)
-
-      window.alert(error.message)
+      setMessage(error.message)
     } finally {
-      event.target.value = ''
+      setBusy(false)
     }
   }
 
-  return (
-    <main className="page">
-      <header className="page-header">
-        <button
-          className="home-button"
-          type="button"
-          onClick={onGoHome}
-        >
-          ← Inicio
-        </button>
-
-        <h1>Más</h1>
-      </header>
-
-      <section className="backup-section">
-        <h2>Datos y respaldo</h2>
-
-        <p>
-          Guardá una copia de clientes,
-          productos y pedidos para poder
-          restaurarlos en otro dispositivo.
-        </p>
-
-        <button
-          className="backup-primary-button"
-          type="button"
-          onClick={handleExport}
-        >
-          Descargar copia de seguridad
-        </button>
-
-        <button
-          className="backup-secondary-button"
-          type="button"
-          onClick={() =>
-            fileInputRef.current?.click()
-          }
-        >
-          Importar copia de seguridad
-        </button>
-
-        <input
-          ref={fileInputRef}
-          className="backup-file-input"
-          type="file"
-          accept=".json,application/json"
-          onChange={handleImport}
-        />
-
-        {message && (
-          <p className="backup-message">
-            ✓ {message}
-          </p>
-        )}
-      </section>
-    </main>
-  )
+  return <main className="page">
+    <header className="page-header"><button className="home-button" disabled={busy} onClick={onGoHome}>← Inicio</button><h1>Más</h1></header>
+    <section className="backup-section">
+      <h2>Datos y respaldo</h2>
+      <p>Incluye clientes, productos, pedidos, borradores, semillas y viajes.</p>
+      <button className="backup-primary-button" disabled={busy} onClick={() => run(async () => {
+        await exportBackup()
+        setMessage('Respaldo generado.')
+      })}>Descargar copia de seguridad</button>
+      <p><label>Importar copia de seguridad <input type="file" accept=".json,application/json" disabled={busy}
+        onChange={({ target }) => {
+          const file = target.files?.[0]
+          target.value = ''
+          if (!file) return
+          void run(async () => {
+            const data = await readBackup(file)
+            if (!window.confirm('Los registros con el mismo ID se actualizarán. Se descargará un respaldo de los datos actuales antes de importar. ¿Continuar?')) return
+            await exportBackup()
+            onBackupImported(await restoreBackup(data))
+            setMessage('Respaldo incorporado correctamente.')
+          })
+        }} /></label></p>
+      {message && <p role="status">{message}</p>}
+    </section>
+    <fieldset className="plain-fields" disabled={busy}>
+      <SeedSettings productos={productos} records={semillas} onChange={onSeedsChanged} />
+    </fieldset>
+  </main>
 }
-
-export default Mas

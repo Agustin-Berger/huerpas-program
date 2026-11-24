@@ -250,7 +250,9 @@ button:active {
   .temporary-page {
     min-height: calc(100vh - 60px);
   }
-  .page {
+}
+
+.page {
   min-height: 100vh;
   padding: 24px 20px;
 }
@@ -1200,5 +1202,4 @@ button:active {
   background: #f5f8f6;
   font-weight: 700;
   cursor: pointer;
-}
 }
